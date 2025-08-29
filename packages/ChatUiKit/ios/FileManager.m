@@ -1,0 +1,679 @@
+#import <Foundation/Foundation.h>
+#import <React/RCTBridgeModule.h>
+#import "FileManager.h"
+#import <QuickLook/QuickLook.h>
+#import <React/RCTUtils.h>
+#import <React/RCTConvert.h>
+#import <MobileCoreServices/MobileCoreServices.h>
+#import <AVFoundation/AVFoundation.h>
+
+static NSString *const E_DOCUMENT_PICKER_CANCELED = @"DOCUMENT_PICKER_CANCELED";
+static NSString *const E_INVALID_DATA_RETURNED = @"INVALID_DATA_RETURNED";
+
+static NSString *const OPTION_TYPE = @"type";
+static NSString *const OPTION_MULTIPLE = @"allowMultiSelection";
+
+static NSString *const FIELD_URI = @"uri";
+static NSString *const FIELD_FILE_COPY_URI = @"fileCopyUri";
+static NSString *const FIELD_COPY_ERR = @"copyError";
+static NSString *const FIELD_NAME = @"name";
+static NSString *const FIELD_TYPE = @"type";
+static NSString *const FIELD_SIZE = @"size";
+
+
+@interface CometChatFileManager () <UIDocumentPickerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, AVAudioRecorderDelegate, AVAudioPlayerDelegate, UIDocumentInteractionControllerDelegate>
+
+@property (nonatomic, strong) AVAudioSession *recordingSession;
+@property (nonatomic, strong) AVAudioRecorder *audioRecorder;
+@property (nonatomic, strong) NSURL *audioFilename;
+@property (nonatomic, assign) CMTime lastPlaybackTime;
+@property (nonatomic, strong) NSDateFormatter *dateFormatter;
+@property (nonatomic, strong) NSTimer *timer;
+@property (nonatomic, strong) AVAudioPlayer *player;
+@property (nonatomic, strong) UIDocumentInteractionController *documentController;
+
+@end
+
+@implementation CometChatFileManager {
+    NSString *_url;
+    RCTResponseSenderBlock callback;
+    bool hasListeners;
+}
+
+- (void)startObserving {
+    hasListeners = YES;
+}
+
+- (void)stopObserving {
+    hasListeners = NO;
+}
+
+- (NSArray<NSString *> *)supportedEvents {
+    return @[@"opening", @"downloading", @"status", @"downloadComplete"];
+}
+
+RCT_EXPORT_MODULE(FileManager)
+
+RCT_EXPORT_METHOD(checkAndDownload:(NSString *) urlToDownload name:(NSString *) name callback:(RCTResponseSenderBlock) callback) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSURL  *url = [NSURL URLWithString:urlToDownload];
+        NSData *urlData = [NSData dataWithContentsOfURL:url];
+        if (urlData)
+        {
+            NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+            NSString *documentsDirectory = [paths objectAtIndex:0];
+            
+            NSString *filePath = [NSString stringWithFormat:@"file://%@/%@", documentsDirectory,name];
+            NSURL *destinationFileURL = [NSURL URLWithString:filePath];
+            
+            NSURL *url = [NSURL URLWithString:urlToDownload];
+            [[[NSURLSession sharedSession] downloadTaskWithURL:url completionHandler:^(NSURL * _Nullable location, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+                if (error == nil) {
+                    NSLog(@"down moving %@ to %@", location, destinationFileURL);
+                    [[NSFileManager defaultManager] moveItemAtURL:location toURL:destinationFileURL error:nil];
+                    NSLog(@"downloaded to %@", filePath);
+                    self->_url = filePath;
+                    NSString *response = [NSString stringWithFormat:@"{\"success\": true, \"filePath\":%d}", filePath];
+                    callback(@[response]);
+                    return;
+                }
+                callback(@[@""]);
+            }] resume];
+        }
+    });
+}
+
+- (void) openMedia:(NSString *) path {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        QLPreviewController* previewCtrl = [[QLPreviewController alloc] init];
+        [previewCtrl setDataSource: self];
+        [[previewCtrl navigationController] setTitle:@""];
+        [previewCtrl setModalPresentationStyle:UIModalPresentationPopover];
+        UIViewController *presentedViewController = RCTPresentedViewController();
+        [presentedViewController presentViewController:previewCtrl animated:YES completion:nil];
+    });
+}
+
+RCT_EXPORT_METHOD(doesFileExist:(NSString *)fileName callback:(RCTResponseSenderBlock)callback) {
+    // Get the document directory path
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documentsDirectory = [paths objectAtIndex:0];
+    NSString *filePath = [documentsDirectory stringByAppendingPathComponent:fileName];
+    
+    // Check if the file exists
+    BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:filePath];
+    
+    // Call the callback with the result
+    if (exists) {
+        callback(@[@"{\"exists\": true}"]);
+    } else {
+        callback(@[@"{\"exists\": false}"]);
+    }
+}
+
+
+RCT_EXPORT_METHOD(openFile:(NSString *) url name:(NSString *) fileName myCallback:(RCTResponseSenderBlock)callback) {
+    //new way
+    @try {
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *documentsDirectory = [paths objectAtIndex:0];
+        NSString *filepath = [NSString stringWithFormat:@"%@/%@", documentsDirectory, fileName];
+        if ([[NSFileManager defaultManager] fileExistsAtPath: filepath isDirectory:false]) {
+            self->_url = [NSString stringWithFormat:@"file://%@",filepath];
+            if (hasListeners)
+                [self sendEventWithName:@"status" body:@{@"url": url, @"state": @"opening"}];
+            [self openMedia:self->_url];
+            callback(@[@"{\"success\": true}"]);
+        } else {
+            if (hasListeners)
+                [self sendEventWithName:@"status" body:@{@"url": url, @"state": @"downloading"}];
+            [self checkAndDownload:url name:fileName callback:^(NSArray *response) {
+                self->_url = [NSString stringWithFormat:@"%@",response[0]];
+                [self openMedia:self->_url];
+                if (self->hasListeners)
+                    [self sendEventWithName:@"status" body:@{@"url": url, @"state": @"opening"}];
+                callback(@[@"{\"success\": true}"]);
+            }];
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"down got exception %@", [exception description]);
+        callback(@[@"{\"error\": true}"]);
+    }
+}
+
+RCT_EXPORT_METHOD(openFileWithOption:(NSString *)fileName callback:(RCTResponseSenderBlock)callback) {
+    @try {
+        // Get the Downloads directory path
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *documentsDirectory = [paths objectAtIndex:0];
+        NSString *filePath = [documentsDirectory stringByAppendingPathComponent:fileName];
+
+        // Check if the file exists
+        if (![[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+            callback(@[@"{\"success\": false, \"error\": \"File not found\"}"]);
+            return;
+        }
+
+        // Get the file URL
+        NSURL *fileURL = [NSURL fileURLWithPath:filePath];
+        
+        // Get the MIME type
+        NSString *mimeType = [self getMimeTypeFromPath:filePath];
+        RCTLogInfo(@"openFileWithOption: MIMETYPE %@ %@", mimeType, fileName);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Initialize and present UIDocumentInteractionController
+            self.documentController = [UIDocumentInteractionController interactionControllerWithURL:fileURL];
+            self.documentController.delegate = self;
+            self.documentController.UTI = mimeType;
+            
+            UIViewController *rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
+            
+            BOOL presented = [self.documentController presentOptionsMenuFromRect:CGRectZero inView:rootViewController.view animated:YES];
+
+            if (presented) {
+                callback(@[@"{\"success\": true}"]);
+            } else {
+                callback(@[@"{\"success\": false, \"error\": \"No app available\"}"]);
+            }
+        });
+
+    } @catch (NSException *exception) {
+        callback(@[[NSString stringWithFormat:@"{\"success\": false, \"error\": \"%@\"}", exception.reason]]);
+    }
+}
+
+// Function to get MIME type
+- (NSString *)getMimeTypeFromPath:(NSString *)filePath {
+    NSString *fileExtension = [filePath pathExtension];
+    CFStringRef UTI = UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtension, NULL);
+    CFStringRef mimeType = UTTypeCopyPreferredTagWithClass(UTI, kUTTagClassMIMEType);
+    CFRelease(UTI);
+    
+    if (!mimeType) {
+        return @"public.data"; // Default type if unknown
+    }
+    
+    return (__bridge_transfer NSString *)mimeType;
+}
+
+- (NSInteger)numberOfPreviewItemsInPreviewController:(QLPreviewController *)controller {
+    return 1;
+}
+
+- (id <QLPreviewItem>)previewController:(QLPreviewController *)controller previewItemAtIndex:(NSInteger)index {
+    return [NSURL URLWithString:_url];
+}
+
+- (BOOL)previewController:(QLPreviewController *)controller shouldOpenURL:(NSURL *)url forPreviewItem:(id <QLPreviewItem>)item {
+    return YES;
+}
+
+RCT_EXPORT_METHOD(requestResourcesPermission:(NSArray *)resourceTypes resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+    __block NSUInteger permissionsToCheckCount = resourceTypes.count;
+    NSMutableDictionary *permDict = [NSMutableDictionary new];
+    for (NSString *resourceType in resourceTypes) {
+        NSString *mediaType;
+        if ([resourceType isEqualToString:@"camera"]) {
+            mediaType = AVMediaTypeVideo;
+        } else if ([resourceType isEqualToString:@"mic"]) {
+            mediaType = AVMediaTypeAudio;
+        } else {
+            reject(@"INVALID_RESOURCE_TYPE", @"Invalid resource type requested", nil);
+            return;
+        }
+        [AVCaptureDevice requestAccessForMediaType:mediaType completionHandler:^(BOOL granted) {
+            NSNumber *authStatusObj = granted ? @(AVAuthorizationStatusAuthorized) : @(AVAuthorizationStatusDenied);
+            permDict[resourceType] = authStatusObj;
+            
+            permissionsToCheckCount--;
+            if (permissionsToCheckCount == 0) {
+                resolve(permDict);
+            }
+        }];
+    }
+}
+
+RCT_EXPORT_METHOD(checkResourcesPermission:(NSArray *)resourceTypes resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+{
+    NSMutableDictionary *permDict = [NSMutableDictionary new];
+    
+    for (NSString *resourceType in resourceTypes) {
+        NSString *mediaType = AVMediaTypeVideo;
+        if ([resourceType isEqualToString:@"camera"]) {
+            mediaType = AVMediaTypeVideo;
+        } else if ([resourceType isEqualToString:@"mic"]) {
+            mediaType = AVMediaTypeAudio;
+        } else {
+            reject(@"INVALID_RESOURCE_TYPE", @"Invalid resource type requested", nil);
+            return;
+        }
+        
+        AVAuthorizationStatus authStatusCamera = [AVCaptureDevice authorizationStatusForMediaType:mediaType];
+
+        NSNumber *authStatusCameraObj = @(authStatusCamera);
+        
+        permDict[resourceType] = authStatusCameraObj;
+    }
+    
+    resolve(permDict);
+}
+
+RCT_EXPORT_METHOD(openCamera: (NSString *) type callback:(RCTResponseSenderBlock) call) {
+    callback = call;
+    UIViewController *presentedViewController = RCTPresentedViewController();
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([UIImagePickerController isSourceTypeAvailable: UIImagePickerControllerSourceTypeCamera]) {
+            UIImagePickerController *imageController = [[UIImagePickerController alloc] init];
+            imageController.delegate = self;
+            imageController.title = @"Select an image";
+            imageController.sourceType = UIImagePickerControllerSourceTypeCamera;
+            [presentedViewController presentViewController:imageController animated:YES completion:nil];
+        } else {
+            NSMutableString *myMutableString = [NSMutableString stringWithString:@"Camera not available"];
+            if (TARGET_IPHONE_SIMULATOR) {
+                [myMutableString setString:@"Camera not available in simulator"];
+            }
+            UIAlertController* alertController = [UIAlertController alertControllerWithTitle:@"Error"
+                                            message:myMutableString
+                                            preferredStyle:UIAlertControllerStyleAlert];
+
+            UIAlertAction* okAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault
+            handler:^(UIAlertAction * action) {
+                // Action when OK button is pressed
+            }];
+
+            [alertController addAction:okAction];
+
+            [presentedViewController presentViewController:alertController animated:YES completion:nil];
+        }
+    });
+}
+
+RCT_EXPORT_METHOD(openFileChooser:(NSString *)type callback:(RCTResponseSenderBlock)call) {
+    callback = call;
+    UIViewController *presentedViewController = RCTPresentedViewController();
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([@"image" isEqualToString:type]) {
+            UIImagePickerController *imageController = [[UIImagePickerController alloc] init];
+            imageController.delegate = self;
+            imageController.title = @"Select an image";
+            imageController.sourceType = UIImagePickerControllerSourceTypeSavedPhotosAlbum;
+            [presentedViewController presentViewController:imageController animated:YES completion:nil];
+        } else {
+            NSArray *documentTypes;
+
+            if ([@"audio" isEqualToString:type]) {
+                documentTypes = @[@"public.audio"];
+            } else if ([@"video" isEqualToString:type]) {
+                documentTypes = @[@"public.movie", @"public.video"];
+            } else if ([@"text" isEqualToString:type]) {
+                documentTypes = @[@"public.text"];
+            } else if ([@"zip" isEqualToString:type]) {
+                documentTypes = @[@"com.pkware.zip-archive"];
+            } else {
+                // Fallback to general types (if needed)
+                documentTypes = @[@"public.data"];
+            }
+
+            UIDocumentPickerViewController *documentController =
+                [[UIDocumentPickerViewController alloc] initWithDocumentTypes:documentTypes
+                                                                       inMode:UIDocumentPickerModeImport];
+            documentController.delegate = self;
+            documentController.title = @"Select a file";
+            [presentedViewController presentViewController:documentController animated:YES completion:nil];
+        }
+    });
+}
+
+
+RCT_EXPORT_METHOD(shareMessage: (NSDictionary *) shareObj myCallback:(RCTResponseSenderBlock)callback) {
+    NSString *message = shareObj[@"message"];
+    NSString *type = shareObj[@"type"];
+    NSString *mediaName = shareObj[@"mediaName"];
+    NSString *fileUrl = shareObj[@"fileUrl"];
+    NSString *mimeType = shareObj[@"mimeType"];
+    
+    if ([type isEqualToString:@"text"]) {
+        [self shareMedia:message];
+        callback(@[@"{\"success\": true}"]);
+    } else {
+        if (fileUrl) {
+            NSURL *url = [NSURL URLWithString:fileUrl];
+            if (url) {
+                [self downloadMediaMessage:url completion:^(NSURL *fileLocation) {
+                    if (fileLocation) {
+                        [self shareMedia:fileLocation];
+                        callback(@[@"{\"success\": true}"]);
+                    }
+                }];
+            } else {
+                NSLog(@"Url is empty");
+                callback(@[@"{\"success\": false}"]);
+            }
+        }
+    }
+}
+
+- (void)downloadMediaMessage:(NSURL *)url completion:(void (^)(NSURL *fileLocation))completion {
+    NSURL *documentsDirectoryURL = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject];
+    NSURL *destinationUrl = [documentsDirectoryURL URLByAppendingPathComponent:[url lastPathComponent]];
+    
+    if ([[NSFileManager defaultManager] fileExistsAtPath:[destinationUrl path]]) {
+        completion(destinationUrl);
+    } else {
+        NSURLSessionDownloadTask *downloadTask = [[NSURLSession sharedSession] downloadTaskWithURL:url completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
+            if (location && !error) {
+                NSError *moveError = nil;
+                [[NSFileManager defaultManager] moveItemAtURL:location toURL:destinationUrl error:&moveError];
+                if (!moveError) {
+                    completion(destinationUrl);
+                } else {
+                    completion(nil);
+                }
+            } else {
+                completion(nil);
+            }
+        }];
+        [downloadTask resume];
+    }
+}
+
+- (void)shareMedia:(id)item {
+    UIViewController *controller = RCTPresentedViewController();
+    if (controller) {
+        UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[item] applicationActivities:nil];
+        activityViewController.popoverPresentationController.sourceView = controller.view;
+        activityViewController.excludedActivityTypes = @[UIActivityTypeAirDrop];
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [controller presentViewController:activityViewController animated:YES completion:nil];
+        });
+    }
+}
+
+
+RCT_EXPORT_METHOD(startRecording:(RCTResponseSenderBlock)callback) {
+    self.recordingSession = [AVAudioSession sharedInstance];
+    NSError *error = nil;
+    if ([self.recordingSession setCategory:AVAudioSessionCategoryPlayAndRecord
+                               withOptions:AVAudioSessionCategoryOptionDefaultToSpeaker
+                                     error:&error] &&
+        [self.recordingSession setActive:YES error:&error]) {
+        [self.recordingSession requestRecordPermission:^(BOOL granted) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (granted) {
+                    //                    [self setupRecorderWithResult]; //setupRecorderWithResult
+                    [self setupRecorderWithResult:callback];
+                    //                    callback(@[@"{\"success\": true}"]);
+                } else {
+                    callback(@[@"{\"granted\": false}"]);
+                    // Failed to record
+                }
+            });
+        }];
+    } else {
+        // Failed to record
+    }
+}
+
+RCT_EXPORT_METHOD(pauseRecording:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (self.audioRecorder.isRecording) {
+        [self.audioRecorder pause];
+        resolve(@"success");
+    } else {
+        resolve(@"error");
+    }
+}
+
+RCT_EXPORT_METHOD(resumeRecording:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (![self.audioRecorder isRecording]) {
+        [self.audioRecorder record];
+        resolve(@"success");
+    } else {
+        resolve(@"error");
+    }
+}
+
+- (void)setupRecorderWithResult:(RCTResponseSenderBlock)callback {
+    self.audioFilename = [self getFileURL];
+    NSDictionary *settings = @{
+        AVFormatIDKey : [NSNumber numberWithInt:kAudioFormatMPEG4AAC],
+        AVSampleRateKey : [NSNumber numberWithFloat:12000.0],
+        AVNumberOfChannelsKey : [NSNumber numberWithInt:1],
+        AVEncoderAudioQualityKey : [NSNumber numberWithInt:AVAudioQualityHigh]
+    };
+    NSError *error = nil;
+    self.audioRecorder = [[AVAudioRecorder alloc] initWithURL:self.audioFilename settings:settings error:&error];
+    if (error) {
+        [self stopRecordingWithSuccess:NO];
+    } else {
+        self.audioRecorder.delegate = self;
+        self.audioRecorder.meteringEnabled = YES;
+        [self.audioRecorder record];
+        
+        NSString *jsonString = [NSString stringWithFormat:@"{\"success\": true, \"file\": \"%@\"}", [self.audioFilename path]];
+        NSLog(@"FILENAME: %@", jsonString);
+        callback(@[jsonString]);
+    }
+}
+
+RCT_EXPORT_METHOD(stopRecordingAudio:(RCTResponseSenderBlock)callback) {
+    if (self.audioRecorder != nil) {
+        NSString *path = [self stopRecordingWithSuccess:YES];
+        NSString *jsonString = [NSString stringWithFormat:@"{\"success\": true, \"file\": \"%@\"}", path];
+        NSLog(@"FILENAME: %@", jsonString);
+        callback(@[jsonString]);
+//        result(path);
+    }
+}
+
+- (NSString *)stopRecordingWithSuccess:(BOOL)success {
+    if (success) {
+        [self.audioRecorder stop];
+        self.audioRecorder = nil;
+        NSError *error = nil;
+        [self.recordingSession setActive:NO error:&error];
+        if (error) {
+            NSLog(@"Error stopping recording: %@", [error localizedDescription]);
+        }
+        return [self.audioFilename path];
+    } else {
+        return nil;
+    }
+}
+
+- (NSURL *)getDocumentsDirectory {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    return [NSURL fileURLWithPath:paths[0]];
+}
+
+- (NSURL *)getFileURL {
+    self.dateFormatter = [[NSDateFormatter alloc] init];
+    self.dateFormatter.dateFormat = @"yyyyMMddHHmmss";
+    NSURL *path = [[self getDocumentsDirectory] URLByAppendingPathComponent:[NSString stringWithFormat:@"audio-recording-%@.m4a", [self.dateFormatter stringFromDate:[NSDate date]]]];
+    return path;
+}
+
+- (void)preparePlayer {
+    NSError *error = nil;
+    self.player = [[AVAudioPlayer alloc] initWithContentsOfURL:self.audioFilename error:&error];
+    if (error) {
+        self.player = nil;
+        NSLog(@"AVAudioPlayer error: %@", [error localizedDescription]);
+    } else {
+        self.player.delegate = self;
+        [self.player prepareToPlay];
+        self.player.volume = 10.0;
+    }
+}
+
+RCT_EXPORT_METHOD(playAudio:(RCTResponseSenderBlock)callback) {
+    [self preparePlayer];
+    [self.player play];
+    NSString *jsonString = [NSString stringWithFormat:@"{\"success\": true, \"file\": \"%@\"}", [self.audioFilename path]];
+    NSLog(@"FILENAME: %@", jsonString);
+    callback(@[jsonString]);
+}
+
+RCT_EXPORT_METHOD(pausePlaying:(RCTResponseSenderBlock)callback) {
+    [self.player pause];
+    NSString *jsonString = [NSString stringWithFormat:@"{\"success\": true, \"file\": \"%@\"}", [self.audioFilename path]];
+    NSLog(@"FILENAME: %@", jsonString);
+    callback(@[jsonString]);
+}
+
+RCT_EXPORT_METHOD(resumePlaying:(RCTResponseSenderBlock)callback) {
+    [self.player play];
+    NSString *jsonString = [NSString stringWithFormat:@"{\"success\": true, \"file\": \"%@\"}", [self.audioFilename path]];
+    NSLog(@"FILENAME: %@", jsonString);
+    callback(@[jsonString]);
+}
+
+- (void)stopPlaying {
+    [self.player stop];
+    self.player = nil;
+}
+
+RCT_EXPORT_METHOD(releaseMediaResources:(RCTResponseSenderBlock)callback) {
+    if (self.audioRecorder != nil || self.audioRecorder.isRecording) {
+        NSTimeInterval duration = self.audioRecorder.currentTime;
+        [self stopRecordingWithSuccess:YES];
+        NSString *jsonString = [NSString stringWithFormat:@"{\"success\": true, \"file\": \"%@\", \"duration\": %f}", [self.audioFilename path], duration];
+        NSLog(@"FILENAME: %@", jsonString);
+        callback(@[jsonString]);
+    }
+
+    if (self.player != nil || self.player.isPlaying) {
+        [self stopPlaying];
+        NSString *jsonString = [NSString stringWithFormat:@"{\"success\": true, \"file\": \"%@\"}", [self.audioFilename path]];
+        NSLog(@"FILENAME: %@", jsonString);
+        callback(@[jsonString]);
+    }
+    
+}
+
+RCT_EXPORT_METHOD(deleteFile:(RCTResponseSenderBlock)callback) {
+    NSString *filePath = [self.audioFilename path];
+    
+    if (filePath == nil) {
+        callback(@[@"{\"success\": false}"]);
+    } else {
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        NSError *error;
+        if ([fileManager removeItemAtPath:filePath error:&error]) {
+            callback(@[@"{\"success\": true}"]);
+        } else {
+            NSLog(@"Error deleting file: %@", error);
+            callback(@[@"{\"success\": false}"]);
+        }
+    }
+}
+
+- (NSURL *) saveImage:(NSString *) imageName image:(UIImage *) image {
+    NSFileManager *defaultManager = [NSFileManager defaultManager];
+    NSURL *documentUrl = [defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
+    if (!documentUrl) {
+        return [NSURL alloc];
+    }
+    NSURL *fileURL = [documentUrl URLByAppendingPathComponent:imageName];
+
+    if ([defaultManager fileExistsAtPath:fileURL.path]) {
+        [defaultManager removeItemAtPath:fileURL.path error:nil];
+    }
+    [UIImageJPEGRepresentation(image, 1.0) writeToURL:fileURL atomically:TRUE];
+    return fileURL;
+}
+
+- (void)imagePickerController:(UIImagePickerController *)picker
+didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> *)info {
+    switch (picker.sourceType) {
+        case UIImagePickerControllerSourceTypeCamera: {
+            UIImage *image = [info valueForKey:UIImagePickerControllerOriginalImage];
+            if (image) {
+                NSTimeInterval interval = [[NSDate date] timeIntervalSince1970];
+                NSString *subPart = [NSString stringWithFormat:@"%f", interval];
+                NSString *filename = [NSString stringWithFormat:@"Image_%@.png", [subPart stringByReplacingOccurrencesOfString:@"." withString:@""]];
+                NSURL *new_image_url = [self saveImage: filename image:image];
+                NSString *type = [self getMimeType:new_image_url];
+                NSString *name = [new_image_url lastPathComponent];
+                NSString *uri = [NSString stringWithFormat:@"%@", new_image_url];
+                callback(@[@{@"name": name, @"type": type, @"uri": uri}]);
+            } else {
+                NSLog(@"failed to get image");
+                callback(@[@{@"error": @"unable to get image"}]);
+            }
+            break;
+        }
+        case UIImagePickerControllerSourceTypePhotoLibrary: {
+            NSLog(@"image from photo library");
+            NSURL *url = (NSURL *) [info valueForKey:UIImagePickerControllerImageURL];
+            if (url) {
+                NSLog(@"image path in url format : %@", url);
+                NSString *name = [url lastPathComponent];
+                NSString *extention = [url pathExtension];
+                NSString *imageUrl = [[NSString alloc] initWithFormat:@"%@", url];
+                NSString *videoUrl = [[NSString alloc] initWithFormat:@"%@", [info valueForKey:UIImagePickerControllerMediaURL]];
+                NSString *fileurl;
+                if (imageUrl)
+                    fileurl = imageUrl;
+                if (videoUrl)
+                    fileurl = videoUrl;
+//                NSString *type = [[NSString alloc] initWithFormat:@"%@", [info valueForKey:UIImagePickerControllerMediaType]];
+                NSString *type = [self getMimeType:url];
+                callback(@[@{@"name": name, @"uri": fileurl, @"type": type}]);
+            } else {
+                callback(@[@{@"error": @"invalid"}]);
+            }
+            break;
+        }
+        case UIImagePickerControllerSourceTypeSavedPhotosAlbum: {
+            NSLog(@"image from saved photo library");
+            NSString *imageUrl = [[NSString alloc] initWithFormat:@"%@", [info valueForKey:UIImagePickerControllerImageURL]];
+            NSString *videoUrl = [[NSString alloc] initWithFormat:@"%@", [info valueForKey:UIImagePickerControllerMediaURL]];
+            NSString *type = [[NSString alloc] initWithFormat:@"%@", [info valueForKey:UIImagePickerControllerMediaType]];
+            NSURL *imgUrl = [[NSURL alloc] initWithString:imageUrl];
+            NSString *name = [imgUrl lastPathComponent];
+            callback(@[@{@"name": name, @"uri": imageUrl, @"type":type}]);
+            break;
+        }
+    }
+    [picker dismissViewControllerAnimated:TRUE completion:nil];
+}
+
+- (NSString *) getMimeType:(NSURL *) url {
+    CFStringRef extension = (__bridge CFStringRef) url.pathExtension;
+    CFStringRef uti = UTTypeCreatePreferredIdentifierForTag(UTTagClassFilenameExtension, extension, NULL);
+    CFStringRef mimeType = UTTypeCopyPreferredTagWithClass(uti, UTTagClassMIMEType);
+    if (uti) {
+        CFRelease(uti);
+    }
+    NSString *mimeTypeString = (__bridge_transfer NSString *)mimeType;
+    return mimeTypeString;
+}
+
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    NSLog(@"image selection cancelled");
+    [picker dismissViewControllerAnimated:TRUE completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    NSLog(@"document selected %@", urls[0]);
+    NSString *uri = [NSString stringWithFormat:@"%@", urls[0]];
+    NSString *type = [self getMimeType:urls[0]];
+    NSString *name = [urls[0] lastPathComponent];
+    if (!name) name = @"Unknown";
+    if (!type) type = @"Unknown";
+    callback(@[@{@"name": name, @"type": type, @"uri": uri}]);
+}
+
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
+    NSLog(@"document pick cancelled");
+    [controller dismissViewControllerAnimated:TRUE completion:nil];
+}
+
+@end

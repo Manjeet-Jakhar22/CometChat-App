@@ -1,0 +1,118 @@
+{
+  "name": "@cometchat/chat-uikit-react-native",
+  "version": "5.0.1",
+  "description": "Ready-to-use Chat UI Components for React Native",
+  "main": "src/index",
+  "module": "src/index",
+  "react-native": "src/index",
+  "source": "src/index",
+  "files": [
+    "lib",
+    "screenshots",
+    "android",
+    "ios",
+    "cpp",
+    "src",
+    "react-native-cometchat-ui-kit.podspec",
+    "!lib/typescript/example",
+    "!android/build",
+    "!ios/build",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__"
+  ],
+  "scripts": {
+    "test": "jest",
+    "typescript": "tsc --noEmit",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "release": "release-it",
+    "format": "prettier --write ./src/**/*.{ts,tsx}"
+  },
+  "keywords": [
+    "cometchat",
+    "chat",
+    "messaging",
+    "audio",
+    "video",
+    "react-native",
+    "webRTC",
+    "Uikit",
+    "SDK"
+  ],
+  "repository": "https://github.com/cometchat-pro/cometchat-pro-react-native-ui-kit",
+  "author": "Inscripts",
+  "license": "https://www.cometchat.com/legal-terms-of-service",
+  "bugs": {
+    "url": "https://github.com/cometchat-pro/cometchat-pro-react-native-ui-kit/issues"
+  },
+  "homepage": "https://www.cometchat.com",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@babel/eslint-parser": "^7.27.0",
+    "@react-native/eslint-config": "0.79.2",
+    "@types/jest": "^29.5.13",
+    "@types/react": "*",
+    "commitlint": "^17.0.2",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.2",
+    "eslint-plugin-prettier": "^5.2.6",
+    "jest": "^29.6.3",
+    "prettier": "^3.5.3",
+    "react": "*",
+    "react-native": "*",
+    "typescript": "^5.0.4"
+  },
+  "dependencies": {
+    "@types/prop-types": "^15.7.14",
+    "prop-types": "^15.8.1"
+  },
+  "peerDependencies": {
+    "@cometchat/chat-sdk-react-native": "*",
+    "@react-native-clipboard/clipboard": "*",
+    "react": "*",
+    "react-native": "*",
+    "react-native-gesture-handler": "*",
+    "react-native-svg": "*",
+    "react-native-video": "*"
+  },
+  "jest": {
+    "preset": "react-native",
+    "modulePathIgnorePatterns": [
+      "<rootDir>/lib/"
+    ]
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "release-it": {
+    "git": {
+      "commitMessage": "chore: release ${version}",
+      "tagName": "v${version}"
+    },
+    "npm": {
+      "publish": true
+    },
+    "github": {
+      "release": true
+    }
+  },
+  "eslintConfig": {
+    "root": true,
+    "parser": "@babel/eslint-parser",
+    "extends": [
+      "@react-native-community",
+      "prettier"
+    ],
+    "rules": {
+      "prettier/prettier": "error"
+    }
+  },
+  "eslintIgnore": [
+    "node_modules/",
+    "lib/"
+  ]
+}

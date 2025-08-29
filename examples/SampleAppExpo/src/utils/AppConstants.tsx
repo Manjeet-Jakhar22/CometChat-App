@@ -1,0 +1,31 @@
+export const AppConstants = {
+  authKey: "70ecb5de1c5ca47b09cb4efab60e7737790d9d43",
+  appId: "27344410e8e424f4",
+  region: "us",
+  subscriptionType: "ALL_USERS",
+  versionNumber: "V5.0.1",
+};
+
+export const SCREEN_CONSTANTS = {
+  APP_CRED: "AppCredentials",
+  SAMPLER_USER: "SampleUser",
+  BOTTOM_TAB_NAVIGATOR: "BottomTabNavigator",
+  CHATS: "Chats",
+  CALLS: "Calls",
+  USERS: "Users",
+  GROUPS: "Groups",
+  CONVERSATION: "Conversation",
+  CREATE_CONVERSATION: "CreateConversation",
+  MESSAGES: "Messages",
+  THREAD_VIEW: "ThreadView",
+  USER_INFO: "UserInfo",
+  GROUP_INFO: "GroupInfo",
+  ADD_MEMBER: "AddMember",
+  TRANSFER_OWNERSHIP: "TransferOwnershipSection",
+  BANNED_MEMBER: "BannedMember",
+  VIEW_MEMBER: "ViewMembers",
+  CALL_LOGS: "CallLogs",
+  CALL_DETAILS: "CallDetails",
+  SAVED_MESSAGES: "SavedMessages",
+  PINNED_MESSAGES: "PinnedMessages",
+} as const;

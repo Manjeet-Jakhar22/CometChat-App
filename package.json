@@ -1,0 +1,11 @@
+{
+    "name": "@cometchat/chat-uikit-react-native",
+    "version": "5.0.1",
+    "private": true,
+    "workspaces": [
+        "examples/*"
+    ],
+    "dependencies": {
+        "react-native-image-picker": "^8.2.1"
+    }
+}

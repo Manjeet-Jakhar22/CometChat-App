@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "SampleAppExpo",
+    "slug": "SampleAppExpo",
+    "version": "5.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "newArchEnabled": true,
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cometchat.internal.reactnative.ios",
+      "userInterfaceStyle": "automatic",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This is for Camera permission",
+        "NSMicrophoneUsageDescription": "This is for Microphone permission",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to change the group avatar.",
+        "NSPhotoLibraryAddUsageDescription": "This app needs access to save images to your photo library."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.cometchat.sampleapp.reactnative.android",
+      "userInterfaceStyle": "automatic",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

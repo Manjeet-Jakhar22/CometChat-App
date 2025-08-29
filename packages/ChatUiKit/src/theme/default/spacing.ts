@@ -1,0 +1,86 @@
+const spacing = {
+  s0: 0,
+  s0_5: 2,
+  s1: 4,
+  s2: 8,
+  s3: 12,
+  s4: 16,
+  s5: 20,
+  s6: 24,
+  s7: 28,
+  s8: 32,
+  s9: 36,
+  s10: 40,
+  s11: 44,
+  s12: 48,
+  s13: 52,
+  s14: 56,
+  s15: 60,
+  s16: 64,
+  s17: 68,
+  s18: 72,
+  s19: 76,
+  s20: 80,
+  max: 1000,
+};
+
+const padding = {
+  p0: spacing.s0,
+  p0_5: spacing.s0_5,
+  p1: spacing.s1,
+  p2: spacing.s2,
+  p3: spacing.s3,
+  p4: spacing.s4,
+  p5: spacing.s5,
+  p6: spacing.s6,
+  p7: spacing.s7,
+  p8: spacing.s8,
+  p9: spacing.s9,
+  p10: spacing.s10,
+};
+
+const margin = {
+  m0: spacing.s0,
+  m0_5: spacing.s0_5,
+  m1: spacing.s1,
+  m2: spacing.s2,
+  m3: spacing.s3,
+  m4: spacing.s4,
+  m5: spacing.s5,
+  m6: spacing.s6,
+  m7: spacing.s7,
+  m8: spacing.s8,
+  m9: spacing.s9,
+  m10: spacing.s10,
+  m11: spacing.s11,
+  m12: spacing.s12,
+  m13: spacing.s13,
+  m14: spacing.s14,
+  m15: spacing.s15,
+  m16: spacing.s16,
+  m17: spacing.s17,
+  m18: spacing.s18,
+  m19: spacing.s19,
+  m20: spacing.s20,
+  max: spacing.max,
+};
+
+const radius = {
+  r0: spacing.s0,
+  r1: spacing.s1,
+  r2: spacing.s2,
+  r3: spacing.s3,
+  r4: spacing.s4,
+  r5: spacing.s5,
+  r6: spacing.s6,
+  max: spacing.max,
+};
+
+export const defaultSpacing = {
+  spacing,
+  padding,
+  margin,
+  radius,
+};
+
+export type Spacing = typeof defaultSpacing;
