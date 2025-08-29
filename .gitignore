@@ -1,0 +1,12 @@
+# dependencies
+node_modules/
+examples/SampleAppExpo/node_modules/
+
+# builds
+android/app/build/
+ios/build/
+examples/SampleAppExpo/android/app/build/
+examples/SampleAppExpo/ios/build/
+
+# misc
+.DS_Store
